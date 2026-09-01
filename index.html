@@ -511,9 +511,11 @@ select.filter-select {
 <div id="login-screen">
   <div class="login-box">
     <h1>GeoConquest Ops</h1>
-    <p>Admin dashboard. Enter the admin password to connect.</p>
+    <p>Admin dashboard. Enter credentials to connect.</p>
+    <label>Service Key</label>
+    <input type="password" id="inp-key" placeholder="Supabase service role key" onkeydown="if(event.key==='Enter')document.getElementById('inp-pass').focus()">
     <label>Password</label>
-    <input type="password" id="inp-pass" placeholder="Enter admin password" onkeydown="if(event.key==='Enter')doLogin()">
+    <input type="password" id="inp-pass" placeholder="Admin password" onkeydown="if(event.key==='Enter')doLogin()">
     <button onclick="doLogin()">Connect</button>
     <div class="login-error" id="login-error"></div>
   </div>
@@ -688,7 +690,7 @@ select.filter-select {
 
 <script>
 const SUPA_URL = 'https://ouuotimrozifispzclxl.supabase.co';
-const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im91dW90aW1yb3ppZmlzcHpjbHhsIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4MjIwNDE0OCwiZXhwIjoyMDk3NzgwMTQ4fQ.7mRqtUYj-vSyq4aB3jM5U1oFaFcqkuhG3KeHV-itceI';
+let SUPA_KEY = ''; // ponytail: entered at login, stored in sessionStorage only
 const ADMIN_HASH = '26b373fb3a632c477f5a54ba6146abcafb7419318bc7f2597e3c8d6dab26964a';
 let quizData = [], allProfiles = [], allQuizResults = [], allPurchases = [], allCountries = [];
 let quizSortCol = 'quiz_count', quizSortAsc = false;
@@ -730,11 +732,14 @@ async function query(table, params = '') {
 }
 
 async function doLogin() {
+  const key = document.getElementById('inp-key').value.trim();
   const pw = document.getElementById('inp-pass').value;
+  if (!key) { showLoginError('Service key required'); return; }
   if (!pw) { showLoginError('Password required'); return; }
   const hash = await hashPassword(pw);
   if (hash !== ADMIN_HASH) { showLoginError('Wrong password'); return; }
-  try { localStorage.setItem('gc_admin_auth', 'true'); } catch {}
+  SUPA_KEY = key;
+  try { sessionStorage.setItem('gc_admin_key', key); sessionStorage.setItem('gc_admin_auth', 'true'); } catch {}
   document.getElementById('login-screen').style.display = 'none';
   document.getElementById('dashboard').style.display = 'block';
   showLoading(30);
@@ -747,7 +752,8 @@ function showLoginError(msg) {
 }
 
 function doLogout() {
-  try { localStorage.removeItem('gc_admin_auth'); } catch {}
+  SUPA_KEY = '';
+  try { sessionStorage.removeItem('gc_admin_auth'); sessionStorage.removeItem('gc_admin_key'); } catch {}
   document.getElementById('dashboard').style.display = 'none';
   document.getElementById('login-screen').style.display = 'flex';
   showLoading(0);
@@ -1276,10 +1282,12 @@ function esc(s) {
   return d.innerHTML;
 }
 
-// Auto-login from localStorage
+// Auto-login from sessionStorage (survives reloads within same tab)
 (function () {
   try {
-    if (localStorage.getItem('gc_admin_auth') === 'true') {
+    const key = sessionStorage.getItem('gc_admin_key');
+    if (sessionStorage.getItem('gc_admin_auth') === 'true' && key) {
+      SUPA_KEY = key;
       document.getElementById('login-screen').style.display = 'none';
       document.getElementById('dashboard').style.display = 'block';
       refreshAll();

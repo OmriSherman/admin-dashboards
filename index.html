@@ -497,6 +497,13 @@ select.filter-select {
   color: var(--critical);
 }
 .btn-danger:hover { background: var(--critical-dim); }
+.delete-user-action {
+  flex-basis: 100%;
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+  padding-top: 12px;
+}
+.delete-user-action .btn-action { font-weight: 700; }
 
 @media (max-width: 768px) {
   .detail-grid { grid-template-columns: 1fr; }
@@ -535,10 +542,40 @@ select.filter-select {
   <div class="stat-grid" id="stat-grid"></div>
 
   <div class="tab-bar">
+    <button class="tab-btn" onclick="switchTab('users',this)">All Users</button>
     <button class="tab-btn active" onclick="switchTab('quiz',this)">Quiz Activity</button>
     <button class="tab-btn" onclick="switchTab('economy',this)">Economy</button>
     <button class="tab-btn" onclick="switchTab('flagged',this)">Flagged</button>
     <button class="tab-btn" onclick="switchTab('purchases',this)">Purchases</button>
+  </div>
+
+  <!-- ALL USERS -->
+  <div class="tab-content" id="tab-users">
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">All Users <span id="users-count" style="color:var(--text-secondary)"></span></span>
+        <div class="panel-controls">
+          <input class="search-input" aria-label="Search all users" placeholder="Search username, email, or ID..." id="users-search" oninput="renderAllUsers()">
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>User</th>
+            <th>Email</th>
+            <th>Lvl</th>
+            <th>XP</th>
+            <th>Gold</th>
+            <th>Tickets</th>
+            <th>Countries</th>
+            <th>Quizzes</th>
+            <th>Joined</th>
+            <th>Details</th>
+          </tr></thead>
+          <tbody id="users-tbody"></tbody>
+        </table>
+      </div>
+    </div>
   </div>
 
   <!-- QUIZ ACTIVITY -->
@@ -731,6 +768,17 @@ async function query(table, params = '') {
   return { data, count: count ? parseInt(count) : data.length };
 }
 
+async function queryAllRows(table, params = '', pageSize = 1000) {
+  const rows = [];
+  let offset = 0;
+  while (true) {
+    const page = await query(table, `${params}&offset=${offset}&limit=${pageSize}`);
+    rows.push(...page.data);
+    if (page.data.length < pageSize) return { data: rows, count: page.count };
+    offset += pageSize;
+  }
+}
+
 async function doLogin() {
   const key = document.getElementById('inp-key').value.trim();
   const pw = document.getElementById('inp-pass').value;
@@ -763,7 +811,7 @@ async function refreshAll() {
   showLoading(10);
   try {
     const [profiles, quizResults, countries, purchases] = await Promise.all([
-      query('profiles', 'select=id,username,xp,gold_balance,tickets,quiz_count,is_conquerer,maps,created_at,avatar_emoji,avatar_flag&order=gold_balance.desc&limit=1000'),
+      queryAllRows('profiles', 'select=id,username,email,xp,gold_balance,tickets,quiz_count,is_conquerer,maps,created_at,avatar_emoji,avatar_flag&order=gold_balance.desc'),
       query('quiz_results', 'select=id,user_id,quiz_type,score,total_questions,xp_earned,gold_earned,played_at&order=played_at.desc&limit=5000'),
       query('owned_countries', 'select=id,user_id,country_code,purchased_at&order=purchased_at.desc&limit=10000'),
       query('user_unlocked_items', 'select=id,user_id,item_type,item_id,unlocked_at&order=unlocked_at.desc&limit=5000')
@@ -779,6 +827,7 @@ async function refreshAll() {
     allProfiles.forEach(p => { p.country_count = countryMap[p.id] || 0; p.level = getLevel(p.xp); });
 
     renderStats(profiles.count);
+    renderAllUsers();
     loadQuizActivity();
     renderEconomy();
     detectAnomalies();
@@ -789,6 +838,27 @@ async function refreshAll() {
     showLoading(0);
     console.error(e);
   }
+}
+
+function renderAllUsers() {
+  const search = (document.getElementById('users-search')?.value || '').trim().toLowerCase();
+  const rows = allProfiles.filter(p => {
+    if (!search) return true;
+    return [p.username, p.email, p.id].some(value => String(value || '').toLowerCase().includes(search));
+  });
+  document.getElementById('users-count').textContent = `(${rows.length}${search ? ` of ${allProfiles.length}` : ''})`;
+  document.getElementById('users-tbody').innerHTML = rows.length ? rows.map(p => `<tr>
+    <td><span style="font-size:18px">${esc((p.avatar_emoji || '') + (p.avatar_flag || ''))}</span> ${esc(p.username || 'Unnamed')}</td>
+    <td>${esc(p.email || '-')}</td>
+    <td>${p.level}</td>
+    <td>${formatNum(p.xp || 0)}</td>
+    <td>${formatNum(p.gold_balance || 0)}</td>
+    <td>${p.tickets || 0}</td>
+    <td>${p.country_count || 0}</td>
+    <td>${p.quiz_count || 0}</td>
+    <td>${p.created_at ? new Date(p.created_at).toLocaleDateString() : '-'}</td>
+    <td><button class="btn-sm" onclick="showUserDetail('${p.id}')">Details</button></td>
+  </tr>`).join('') : '<tr><td colspan="10" class="empty-state">No users found</td></tr>';
 }
 
 function renderStats(totalUsers) {
@@ -1088,6 +1158,7 @@ async function showUserDetail(uid) {
   document.getElementById('modal-title').textContent = p.username;
   document.getElementById('modal-detail').innerHTML = `
     <div class="detail-item"><label>Avatar</label><span style="font-size:24px">${(p.avatar_emoji || '') + ' ' + (p.avatar_flag || '')}</span></div>
+    <div class="detail-item"><label>Email</label><span style="word-break:break-all">${esc(p.email || '-')}</span></div>
     <div class="detail-item"><label>User ID</label><span style="font-size:11px;word-break:break-all">${uid}</span></div>
     <div class="detail-item"><label>Joined</label><span>${new Date(p.created_at).toLocaleDateString()}</span></div>
     <div class="detail-item"><label>Level</label><span>${p.level}</span></div>
@@ -1121,6 +1192,10 @@ async function showUserDetail(uid) {
     </div>
     <div class="action-row">
       <button class="btn-action btn-danger" onclick="adminResetQuizResults(this)">Delete Quiz History</button>
+    </div>
+    <div class="action-row delete-user-action">
+      <button class="btn-action btn-danger" onclick="adminDeleteUser(this)">Delete User Permanently</button>
+      <span style="font-family:var(--mono);font-size:11px;color:var(--text-secondary)">Removes the Auth account and all game data</span>
     </div>
   `;
 
@@ -1166,6 +1241,17 @@ async function adminDelete(table, filter) {
       'apikey': SUPA_KEY,
       'Authorization': `Bearer ${SUPA_KEY}`,
       'Prefer': 'return=minimal'
+    }
+  });
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+}
+
+async function adminDeleteAuthUser(uid) {
+  const res = await fetch(`${SUPA_URL}/auth/v1/admin/users/${encodeURIComponent(uid)}`, {
+    method: 'DELETE',
+    headers: {
+      'apikey': SUPA_KEY,
+      'Authorization': `Bearer ${SUPA_KEY}`
     }
   });
   if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
@@ -1246,6 +1332,30 @@ function adminResetQuizResults(btn) {
       showActionFeedback('Quiz history deleted', false);
     } catch (e) {
       showActionFeedback('Failed: ' + e.message, true);
+    }
+  });
+}
+
+function adminDeleteUser(btn) {
+  const uid = activeModalUid;
+  if (!uid) return;
+  const profile = allProfiles.find(p => p.id === uid);
+  const username = profile?.username || uid.slice(0, 8);
+  requireConfirm(btn, 'Delete User Permanently', async () => {
+    btn.disabled = true;
+    btn.textContent = 'Deleting...';
+    try {
+      await adminDeleteAuthUser(uid);
+      closeModal();
+      allProfiles = allProfiles.filter(p => p.id !== uid);
+      allQuizResults = allQuizResults.filter(q => q.user_id !== uid);
+      allCountries = allCountries.filter(c => c.user_id !== uid);
+      allPurchases = allPurchases.filter(p => p.user_id !== uid);
+      await refreshAll();
+    } catch (e) {
+      btn.disabled = false;
+      btn.textContent = 'Delete User Permanently';
+      showActionFeedback(`Failed to delete ${username}: ${e.message}`, true);
     }
   });
 }
